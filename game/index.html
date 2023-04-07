@@ -1,0 +1,602 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Text - Hilo Example</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="user-scalable=no, initial-scale=1.0, minimum-scale=1, maximum-scale=1" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <script type="text/javascript" src="hilo/standalone/hilo-standalone.min.js"></script>
+    <script type="text/javascript" src="hilo/flash/hilo-flash.min.js" data-auto="true"></script>
+    <script type="text/javascript" src="game_js/load_resource.js"></script>
+    <script type="text/javascript" src="game_js/game1_scene.js"></script>
+    <script type="text/javascript" src="game_js/home_scene.js"></script>
+    <script type="text/javascript" src="game_js/jinhua_game_scene.js"></script>
+    <script type="text/javascript" src="game_js/jinhua_scene.js"></script>
+    <script type="text/javascript" src="game_js/login_scene.js"></script>
+    <script type="text/javascript" src="game_js/pkp_scene.js"></script>
+</head>
+<body onload="run();">
+<script type="text/javascript">
+    var resource = null;
+
+    //初始化视窗大小
+    var width = 720;
+    var height = 1280;
+    var scale = 0.5;
+    var winWidth = window.innerWidth, winHeight = window.innerHeight;
+    var winRatio = winWidth / winHeight;
+    var targetWidth = 360, targetHeight = 640;
+    var targetRatio = targetWidth / targetHeight;
+    if(winWidth > targetWidth){
+        width = targetWidth;
+        height = Math.min(targetHeight, winHeight);
+    }else if(winRatio > targetRatio){
+        width = winWidth;
+        height = winHeight;
+    }else{
+        width = 320;
+        height = 480;
+    }
+
+    //获取输入框值
+    var get_value = function(obj) {
+        return obj.drawable.domElement.value;
+    }
+
+    //清空输入框值
+    var empty_value = function(obj) {
+        obj.drawable.domElement.value = '';
+    }
+
+    function run(){
+        resource = new Resource();
+        resource.on('complete', function(e) {
+            init();
+        });
+        resource.load();
+    }
+
+    // 游戏全局
+    var game_Game1 = null; //游戏一的玩法
+
+    // 游戏主函数
+    function init(){
+
+        // ================================================================  游戏初始化
+
+        //禁止默认行为
+        document.body.style[Hilo.browser.jsVendor + 'TouchCallout'] = 'none';
+        document.body.style[Hilo.browser.jsVendor + 'UserSelect'] = 'none';
+        document.body.style[Hilo.browser.jsVendor + 'TextSizeAdjust'] = 'none';
+        document.body.style[Hilo.browser.jsVendor + 'TapHighlightColor'] = 'rgba(0,0,0,0)';
+
+        //禁止页面滚动
+        document.body.addEventListener('touchmove', function(e){
+            e.preventDefault();
+        }, false);
+
+        // 创建舞台
+        var stage = new Hilo.Stage({
+            renderType: "canvas",
+            container:document.body,
+            width:width,
+            height:height,
+        });
+        window.onresize = function(){
+            stage.scaleX = scale;
+            stage.scaleY = scale;
+            stage.resize(width, height, true);
+        };
+
+        // 启动所有事件
+        stage.enableDOMEvent([Hilo.event.POINTER_START, Hilo.event.POINTER_MOVE, Hilo.event.POINTER_END]);
+        // 舞台刷新和渲染
+        var ticker = new Hilo.Ticker(100);
+        ticker.addTick(stage);
+        ticker.start();
+
+
+        // ================================================================  初始化游戏变量
+        var user = null; //玩家自己
+        var login = null; //登录页面
+        var home = null; //游戏首页
+        var game1 = null; //游戏1 点头像
+        var pkp = null; //扑克牌
+        var jinhua = null; //炸金花游戏
+        var jinhua_game = null; //炸金花游戏房间
+
+
+        // ================================================================  WS 逻辑
+        var ws;
+        var IsConn = false; // 是否连接 wbesocket
+
+        // 游戏websocket 链接
+        var WSConn = function(url) {
+            if(IsConn){
+                console.log("已经连接");
+                return
+            }
+            ws = new WebSocket(url);
+            // 绑定连接事件
+            ws.onopen = function(e) {
+                console.log("Connection open ...");
+                //ws.send("发送的数据");
+            }
+            //绑定收到消息事件
+            ws.onmessage = function(e) {
+                console.log( "Received Message: " + e.data);
+
+                var data = JSON.parse(e.data);
+
+                // ----------------------------------------------------  游戏一
+                if (data.cmd == "Game1") {
+                    console.log(data.data);
+                    game1.getChildById(data.data).visible = false;
+                }
+
+                // ----------------------------------------------------  发牌
+                if (data.cmd == "FP") {
+                    console.log(data.data);
+                    var pai = data.data.split(',');
+                    for(let i=0;i<pai.length;i++){
+                        console.log(pai[i]);
+                        if(pai[i] == "") {continue;}
+                        var p = new Hilo.Button({
+                            id: pai[i],
+                            image: 'resource/pkp/'+pai[i]+'.jpg',
+                            width: 64,
+                            height: 100,
+                            x: 20+i*80,
+                            y: 200
+                        });
+                        pkp.addChild(p);
+                    }
+                }
+
+                // ----------------------------------------------------  金花 更新房间列表
+                if (data.cmd == "JH-RootList") {
+
+                    jinhua.getChildById('rootList').removeAllChildren();
+
+                    var rootList = data.data.split(',');
+                    var yh = 0;
+                    var hh = 10;
+                    var ww = 10;
+                    for(let i=0;i<rootList.length;i++){
+                        if(rootList[i] == "") {continue;}
+                        if (yh > 4) {
+                            yh = 0;
+                            hh = hh + 100;
+                            ww = 10;
+                        }
+
+                        // 使用容器实现房间号
+                        var container = new Hilo.Container({
+                            id: rootList[i],
+                            x:ww,
+                            y:hh,
+                            background:"#fff",
+                            width:100,
+                            height:50
+                        });
+                        var rootListText = new Hilo.Text({
+                            font: "16px arial",
+                            text: "房间: "+ rootList[i],
+                            lineSpacing: 0,
+                            width: 100,
+                            height: 50,
+                            x:10,
+                            y:10,
+                        }).addTo(container);
+                        container.on(Hilo.event.POINTER_START, function(e){
+                            console.log(e.type, this);
+                            // 进入房间
+                            gameXZ("jinhua_game")
+                            // 发起进入房间数据
+                            var data = {
+                                "cmd":"JH-InRoom",
+                                "user":user,
+                                "data": rootList[i],
+                                "time":(new Date()).getTime()
+                            }
+                            console.log(JSON.stringify(data));
+                            ws.send(JSON.stringify(data));
+                            // 请求房间数据
+                            var data = {
+                                "cmd":"JH-RoomInfo",
+                                "user":user,
+                                "data": rootList[i],
+                                "time":(new Date()).getTime()
+                            }
+                            console.log(JSON.stringify(data));
+                            ws.send(JSON.stringify(data));
+
+                        }).on(Hilo.event.POINTER_END, function(e){
+                            console.log(e.type, this);
+                        });
+                        jinhua.getChildById('rootList').addChild(container);
+
+                        yh++;
+                        ww = ww + 120;
+                    }
+                }
+
+                // ---------------------------------------------------- 金花房间信息
+                if (data.cmd == "JH-RoomInfo") {
+                    console.log("金花房间信息 = ", data.data);
+
+                    // 清空容器数据
+                    jinhua_game.getChildById('game_title').removeAllChildren();
+                    jinhua_game.getChildById('game_users').removeAllChildren();
+
+                    var info = JSON.parse(data.data);
+
+                    //游戏房间title
+                    var title = new Hilo.Text({
+                        font: "18px arial",
+                        text: info.title,
+                        lineSpacing: 0,
+                        width: width,
+                        x: 10,
+                        y: 10
+                    });
+                    jinhua_game.getChildById('game_title').addChild(title);
+
+                    //所有玩家准备信息
+                    var users = new Hilo.Text({
+                        font: "13px arial",
+                        text: JSON.stringify(info.users),
+                        lineSpacing: 0,
+                        width: width,
+                        x: 10,
+                        y: 10
+                    });
+                    jinhua_game.getChildById('game_users').addChild(users);
+
+                    var room_id = new Hilo.Text({
+                        id:info.id,
+                    });
+                    jinhua_game.getChildById('game_id').addChild(room_id);
+
+                }
+
+                // ---------------------------------------------------- 金花房间发牌
+                if (data.cmd == "JH-FP") {
+                    var pai = data.data.split(',');
+                    for(let i=0;i<pai.length;i++){
+                        console.log(pai[i]);
+                        if(pai[i] == "") {continue;}
+                        var p = new Hilo.Button({
+                            id: pai[i],
+                            image: 'resource/pkp/'+pai[i]+'.jpg',
+                            width: 58,
+                            height: 98,
+                            x: 10+i*80,
+                            y: 10
+                        });
+                        jinhua_game.getChildById('game_pai').addChild(p);
+                    }
+                }
+
+            }
+            //绑定关闭或断开连接事件
+            ws.onclose = function(e) {
+                console.log("Connection closed.");
+                IsConn = false;
+                closeXZ();
+                login_succeed();
+            }
+            //如果出现连接、处理、接收、发送数据失败的时候触发onerror事件
+            ws.onerror = function(e){
+                console.log(error);
+                IsConn = false;
+                closeXZ();
+                login_succeed();
+            }
+        }
+
+        // 客户端断开ws
+        var WSOut = function() {
+            var data = {
+                "cmd":"OUT",
+                "user":user,
+	            "data":"",
+	            "time":(new Date()).getTime()
+            }
+            ws.send(JSON.stringify(data));
+            ws.close();
+        }
+
+        // ================================================================ 登录场景 加载到舞台
+        login = new LoginScene({
+            width: width,
+            height: height
+        }).addTo(stage);
+
+        // ================================================================ home场景 加载到舞台,不显示
+        home = new HomeScene({
+            width: width,
+            height: height,
+            visible: false//只有当登录成功后才显示
+        }).addTo(stage);
+
+        // ================================================================ game1场景 加载到舞台,不显示
+        game1 = new Game1Scene({
+            width: width,
+            height: height,
+            visible: false//只有当登录成功后才显示
+        }).addTo(stage);
+
+        // ================================================================ pkp场景 加载到舞台,不显示
+        pkp = new PkpScene({
+            width: width,
+            height: height,
+            visible: false//只有当登录成功后才显示
+        }).addTo(stage);
+
+        // ================================================================  炸金花游戏大厅 加载到舞台,不显示
+        jinhua = new JinhuaScene({
+            width: width,
+            height: height,
+            visible: false//只有当登录成功后才显示
+        }).addTo(stage);
+
+        // ================================================================ 炸金花游戏房间  加载到舞台,不显示
+        jinhua_game = new JinhuaGameScene({
+            width: width,
+            height: height,
+            visible: false//只有当登录成功后才显示
+        }).addTo(stage);
+
+        // ================================================================  登录逻辑
+        // 登录成功后切换场景
+        var login_succeed = function () {
+            if(IsConn){
+                login.visible = false;
+                home.visible = true;
+            }else{
+                login.getChildById('name').visible = true;
+                login.visible = true;
+                home.visible = false;
+            }
+        }
+
+        // 具体操作逻辑， 连接按钮点击事件
+        login.getChildById('connBtn').on(Hilo.event.POINTER_START, function(e){
+            console.log(e.type, this);
+            // 获取name
+            var name_value = get_value(login.getChildById('name'));
+            console.log(name_value);
+            //empty_value(login.getChildById('name'))//清空输入框
+            //进行ws连接
+            WSConn("ws://127.0.0.1:22222/conn?name="+name_value);
+            user = name_value;
+            IsConn = true;
+            login.getChildById('name').visible = false;//隐藏输入框
+        }).on(Hilo.event.POINTER_END, function(e){
+            console.log(e.type, this);
+            login_succeed()
+        });
+
+        // 返回登录按钮点击事件
+        home.getChildById('returnBtn').on(Hilo.event.POINTER_START, function(e){
+            console.log(e.type, this);
+            IsConn = false;
+            WSOut()
+        }).on(Hilo.event.POINTER_END, function(e){
+            console.log(e.type, this);
+            login_succeed()
+        });
+
+        // ================================================================ 首页游戏选择逻辑
+        //场景切换
+        var gameXZ = function (name){
+
+            game1.visible = false;
+            pkp.visible = false;
+            home.visible = false;
+            jinhua.visible = false;
+            jinhua_game.visible = false;
+
+            switch (name){
+                case "home":
+                    home.visible = true;
+                    break;
+                case "game1":
+                    game1.visible = true;
+                    break;
+                case "pkp":
+                    pkp.visible = true;
+                    break;
+                case "jinhua":
+                    jinhua.visible = true;
+                    break;
+                case "jinhua_game":
+                    jinhua_game.visible = true;
+                    break;
+            }
+
+        }
+
+        //关闭所有游戏舞台
+        var closeXZ = function (){
+            game1.visible = false;
+            pkp.visible = false;
+            home.visible = false;
+            jinhua.visible = false;
+            jinhua_game.visible = false;
+        }
+
+        // 点击游戏一
+        home.getChildById('gameBtn').on(Hilo.event.POINTER_START, function(e){
+            console.log('gameText');
+            console.log(e.type, this);
+            gameXZ("game1");
+        }).on(Hilo.event.POINTER_END, function(e){
+            console.log(e.type, this);
+        });
+
+        // 点击扑克牌
+        home.getChildById('pkpBtn').on(Hilo.event.POINTER_START, function(e){
+            console.log('pkpText');
+            console.log(e.type, this);
+            gameXZ("pkp");
+
+            // 请求发牌
+            var data = {
+                "cmd":"FP",
+                "user":user,
+                "data":"",
+                "time":(new Date()).getTime()
+            }
+            console.log(JSON.stringify(data));
+            ws.send(JSON.stringify(data));
+
+        }).on(Hilo.event.POINTER_END, function(e){
+            console.log(e.type, this);
+        });
+
+        // 点击炸金花
+        home.getChildById('jinhuaBtn').on(Hilo.event.POINTER_START, function(e){
+            console.log('jinhuaBtn');
+            console.log(e.type, this);
+            gameXZ("jinhua");
+            //请求金花房间列表
+            var data = {
+                "cmd":"JH-GetRootList",
+                "user":user,
+                "data":"",
+                "time":(new Date()).getTime()
+            }
+            console.log(JSON.stringify(data));
+            ws.send(JSON.stringify(data));
+        }).on(Hilo.event.POINTER_END, function(e){
+            console.log(e.type, this);
+        });
+
+
+        // ================================================================ 游戏一业务逻辑
+        //玩家玩法 Game1 向服务上报操作
+        game_Game1 = function (id) {
+            var data = {
+                "cmd":"Game1",
+                "user":user,
+                "data":id,
+                "time":(new Date()).getTime()
+            }
+            console.log(JSON.stringify(data));
+            ws.send(JSON.stringify(data));
+        }
+
+        //返回
+        game1.getChildById('returnHome').on(Hilo.event.POINTER_START, function(e){
+            gameXZ("home");
+        }).on(Hilo.event.POINTER_END, function(e){
+        });
+
+
+
+        // ================================================================ 扑克牌业务逻辑
+        //返回
+        pkp.getChildById('returnHome').on(Hilo.event.POINTER_START, function(e){
+            gameXZ("home");
+        }).on(Hilo.event.POINTER_END, function(e){
+        });
+
+
+
+        // ================================================================ 炸金花业务逻辑
+        jinhua.getChildById('returnHome').on(Hilo.event.POINTER_START, function(e){
+            gameXZ("home");
+        }).on(Hilo.event.POINTER_END, function(e){
+        });
+
+        // 创建房间
+        jinhua.getChildById('newRoot').on(Hilo.event.POINTER_START, function(e){
+            var data = {
+                "cmd":"JH-NewRoot",
+                "user":user,
+                "data": "",
+                "time":(new Date()).getTime()
+            }
+            console.log(JSON.stringify(data));
+            ws.send(JSON.stringify(data));
+            // 进入房间
+            gameXZ("jinhua_game")
+
+
+        }).on(Hilo.event.POINTER_END, function(e){
+        });
+
+        // 退出游戏
+        jinhua_game.getChildById('game_out').on(Hilo.event.POINTER_START, function(e){
+            var room_id = jinhua_game.getChildById('game_id').children[0].id;
+            // 发起退出数据
+            var data = {
+                "cmd":"JH-RoomOut",
+                "user":user,
+                "data": room_id,
+                "time":(new Date()).getTime()
+            }
+            console.log(JSON.stringify(data));
+            ws.send(JSON.stringify(data));
+
+            // 清空容器数据
+            jinhua_game.getChildById('game_title').removeAllChildren();
+            jinhua_game.getChildById('game_users').removeAllChildren();
+            jinhua_game.getChildById('game_show').removeAllChildren();
+            jinhua_game.getChildById('game_pai').removeAllChildren();
+            jinhua_game.getChildById('game_doing').removeAllChildren();
+            gameXZ("jinhua")
+        }).on(Hilo.event.POINTER_END, function(e){
+        });
+
+        // 准备游戏
+        jinhua_game.getChildById('game_start').on(Hilo.event.POINTER_START, function(e){
+            var room_id = jinhua_game.getChildById('game_id').children[0].id;
+            // 发起退出数据
+            var data = {
+                "cmd":"JH-UserZB",
+                "user":user,
+                "data": room_id,
+                "time":(new Date()).getTime()
+            }
+            console.log(JSON.stringify(data));
+            ws.send(JSON.stringify(data));
+
+        }).on(Hilo.event.POINTER_END, function(e){
+        });
+
+        // 结束游戏按钮
+        var end_game = new Hilo.Button({
+            id: 'end_game',
+            image: 'resource/btn/btn_out.png',
+            width: 88,
+            height: 32,
+            x: 10,
+            y: 10
+        });
+        jinhua_game.getChildById('game_doing').addChild(end_game);
+        end_game.on(Hilo.event.POINTER_START, function(e){
+            var room_id = jinhua_game.getChildById('game_id').children[0].id;
+            // 发起退出数据
+            var data = {
+                "cmd":"JH-GameEnd",
+                "user":user,
+                "data": room_id,
+                "time":(new Date()).getTime()
+            }
+            console.log(JSON.stringify(data));
+            ws.send(JSON.stringify(data));
+        });
+
+
+    }
+
+</script>
+
+
+</body>
+</html>
